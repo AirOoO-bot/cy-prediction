@@ -45,7 +45,7 @@ crops_clean = crops_clean.withColumn(
 # Step 3: Drop rows where county or yield is null
 crops_clean = crops_clean.na.drop(subset=["county", "yield"])
 
-# Step 4: Make text columns uniform (Title Case) to ensure a perfect merge later
+# Step 4: Make text columns uniform (Title Case) to ensure a perfect merge latur
 crops_clean = crops_clean.withColumn("state", initcap(col("state"))) \
                          .withColumn("county", initcap(col("county"))) \
                          .withColumn("crop", initcap(col("crop")))
@@ -81,7 +81,7 @@ weather_clean = weather_clean.withColumnRenamed("TMAX", "tmax") \
                              .withColumnRenamed("Longitude", "lon") \
                              .withColumnRenamed("ID", "station_id")
 
-# Step 4: Aggregate! 
+# Step 4: Aggregayto! 
 # We group by Station and Year, then calculate the Average Temps and Total Rainfall.
 # We also keep the Lat/Lon so we know where the station is!
 weather_yearly = weather_clean.groupBy("station_id", "year", "lat", "lon").agg(
@@ -93,9 +93,7 @@ weather_yearly = weather_clean.groupBy("station_id", "year", "lat", "lon").agg(
 # Step 5: Drop rows that still have nulls after averaging
 weather_yearly = weather_yearly.na.drop()
 
-# ==========================================
 # POST-CLEANING INSPECTION
-# ==========================================
 print(f"\nCleaned & Aggregated weather data count: {weather_yearly.count()}")
 print("\n--- First 5 rows of CLEANED Weather Data ---")
 weather_yearly.show(5, truncate=False)
