@@ -2,29 +2,41 @@ import seaborn as sns # type: ignore
 import matplotlib.pyplot as plt
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, initcap, regexp_replace, expr, split, avg, sum, round
-#Airoooooooooo
+
+# ==========================================
+# 1. INITIALIZE SPARK WITH MORE MEMORY
+# ==========================================
+# We add memory configs to prevent the "Java heap space" OutOfMemoryError
 spark = SparkSession.builder \
     .appName("Crop_Weather_Merge") \
     .master("local[*]") \
+    .config("spark.driver.memory", "4g") \
+    .config("spark.executor.memory", "4g") \
     .getOrCreate()
 
+# ==========================================
+# 2. LOAD DATA
+# ==========================================
 crops_df = spark.read.csv("raw-data/crops.csv", header=True, inferSchema=True)
-#print original data counts
+weather_df = spark.read.csv("raw-data/weather.csv", header=True, inferSchema=True)
+
 print(f"Original crops data count: {crops_df.count()}")
-print("\n--- First 5 rows of RAW Crops Data ---")
-crops_df.show(5, truncate=False,)
+print(f"Original weather data count: {weather_df.count()}")
 
-# CROP DATA CLEANING PIPELINE (PYSPARK)
-# We sample 5% of the 500k rows to visualize the "messy" state of the data
+# ==========================================
+# 3. PRE-CLEANING EDA
+# ==========================================
+# We sample a tiny bit just to document missing values for your report
 sample_pre_pd = crops_df.sample(False, 0.001).toPandas()
-
 plt.figure(figsize=(10, 4))
 sns.heatmap(sample_pre_pd.isnull(), cbar=False, cmap='viridis')
 plt.title("EDA: Missing Values Before Cleaning")
 plt.savefig("eda_pre_cleaning.png")
-print("Pre-cleaning EDA saved as eda_pre_cleaning.png")
+plt.close()
 
-# Step 1: Filter for YIELD and Select/Rename essential columns 
+# ==========================================
+# 4. CROP DATA CLEANING PIPELINE
+# ==========================================
 crops_clean = crops_df.filter(col("STATISTICCAT_DESC") == "YIELD") \
     .select(
         col("YEAR").alias("year"),
@@ -35,67 +47,69 @@ crops_clean = crops_df.filter(col("STATISTICCAT_DESC") == "YIELD") \
         col("UNIT_DESC").alias("unit")
     )
 
-# Step 2: Clean the 'yield' values
-# We use expr("try_cast(...)") so that weird strings like "(D)" safely become nulls instead of crashing :D.
+# Clean yield: Remove commas and cast to double
 crops_clean = crops_clean.withColumn(
     "yield", 
     expr("try_cast(regexp_replace(yield, ',', '') as double)")
 )
 
-# Step 3: Drop rows where county or yield is null
+# Drop rows where critical data is missing
 crops_clean = crops_clean.na.drop(subset=["county", "yield"])
 
-# Step 4: Make text columns uniform (Title Case) to ensure a perfect merge later
+# Standardize text to Title Case
 crops_clean = crops_clean.withColumn("state", initcap(col("state"))) \
                          .withColumn("county", initcap(col("county"))) \
                          .withColumn("crop", initcap(col("crop")))
 
-print(f"Cleaned crops data count: {crops_clean.count()}")
-print("\n--- First 5 rows of Cleaned Crops Data ---")
-crops_clean.show(5, truncate=False)
+print(f"Cleaned crops count: {crops_clean.count()}")
 
-#Jeromeeeee & Airoooooooooo
-#WEATHER CLEANING
-weather_df = spark.read.csv("raw-data/weather.csv", header=True, inferSchema=True)
-
-# WEATHER DATA CLEANING PIPELINE
-
-# PRE-CLEANING INSPECTION
-
-print(f"Original weather data count: {weather_df.count()}")
-print("\n--- First 5 rows of RAW Weather Data ---")
-weather_df.show(5, truncate=False)
-
-# Step 1: Extract 'year' from the DATE column (Format: MM/DD/YYYY)
-# We split the string by '/' and grab the last part (the year)
+# ==========================================
+# 5. WEATHER DATA CLEANING & AGGREGATION
+# ==========================================
+# Step 1: Extract year
 weather_clean = weather_df.withColumn("year", split(col("DATE"), "/").getItem(2).cast("integer"))
 
-# Step 2: Drop EVAP (Evaporation) since it's almost entirely null
-weather_clean = weather_clean.drop("EVAP")
+# Step 2: Rename and drop unused
+weather_clean = weather_clean.select(
+    col("year"),
+    col("TMAX").alias("tmax"),
+    col("TMIN").alias("tmin"),
+    col("PRCP").alias("prcp")
+).drop("EVAP")
 
-# Step 3: Rename columns to lowercase for a cleaner PySpark experience
-weather_clean = weather_clean.withColumnRenamed("TMAX", "tmax") \
-                             .withColumnRenamed("TMIN", "tmin") \
-                             .withColumnRenamed("PRCP", "prcp") \
-                             .withColumnRenamed("Latitude", "lat") \
-                             .withColumnRenamed("Longitude", "lon") \
-                             .withColumnRenamed("ID", "station_id")
-
-# Step 4: Aggregate! 
-# We group by Station and Year, then calculate the Average Temps and Total Rainfall.
-# We also keep the Lat/Lon so we know where the station is!
-weather_yearly = weather_clean.groupBy("station_id", "year", "lat", "lon").agg(
+# Step 3: AGGREGATE TO NATIONAL YEARLY AVERAGE
+# This prevents the "Cartesian Product" that crashed your previous run.
+# We get one weather summary per year.
+weather_national_yearly = weather_clean.groupBy("year").agg(
     round(avg("tmax"), 2).alias("avg_tmax"),
     round(avg("tmin"), 2).alias("avg_tmin"),
     round(sum("prcp"), 2).alias("total_prcp")
-)
+).na.drop()
 
-# Step 5: Drop rows that still have nulls after averaging
-weather_yearly = weather_yearly.na.drop()
+print(f"Aggregated weather years: {weather_national_yearly.count()}")
 
 # ==========================================
-# POST-CLEANING INSPECTION
+# 6. JOIN & MULTIVARIATE ANALYSIS
 # ==========================================
-print(f"\nCleaned & Aggregated weather data count: {weather_yearly.count()}")
-print("\n--- First 5 rows of CLEANED Weather Data ---")
-weather_yearly.show(5, truncate=False)
+# Inner join ensures we only keep years where both crop and weather data exist
+final_df = crops_clean.join(weather_national_yearly, on="year", how="inner")
+
+print(f"Final Merged count: {final_df.count()}")
+
+# Select numeric features for the Correlation Heatmap
+features = ["yield", "avg_tmax", "avg_tmin", "total_prcp"]
+corr_pd = final_df.select(features).sample(False, 0.5).toPandas()
+
+# Generate Heatmap
+plt.figure(figsize=(10, 8))
+sns.heatmap(corr_pd.corr(), annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
+plt.title("Multivariate Analysis: Weather Features vs. Crop Yield")
+plt.savefig("eda_multivariate_heatmap.png")
+print("Multivariate Heatmap saved as eda_multivariate_heatmap.png")
+
+# Final Inspection
+print("\n--- Final Preprocessed Sample Data ---")
+final_df.show(5)
+
+# Save the preprocessed dataset for the next project phase
+final_df.write.mode("overwrite").parquet("processed-data/crop_weather_final.parquet")
