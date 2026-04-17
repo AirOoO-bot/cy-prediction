@@ -4,7 +4,7 @@ import geopandas as gpd
 # read weather data and create a dataframe
 weather_df = pd.read_csv("raw-data/weather.csv")
 crops_df = pd.read_csv("raw-data/crops.csv")
-soil_df = pd.read_csv("raw-data/soil.csv")
+# soil_df = pd.read_csv("raw-data/soil.csv")
 
 # create a GeoDataFrame from the weather data, using the Latitude and Longitude columns to create Point geometries
 gdf = gpd.GeoDataFrame(

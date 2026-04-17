@@ -1,4 +1,4 @@
-import seaborn as sns # type: ignore
+import seaborn as sns 
 import matplotlib.pyplot as plt
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, initcap, regexp_replace, expr, split, avg, sum, round
@@ -12,13 +12,13 @@ crops_df = spark.read.csv("raw-data/crops.csv", header=True, inferSchema=True)
 #print original data counts
 print(f"Original crops data count: {crops_df.count()}")
 print("\n--- First 5 rows of RAW Crops Data ---")
-crops_df.show(5, truncate=False,)
+crops_df.show(5, truncate=False)
 
-# CROP DATA CLEANING PIPELINE (PYSPARK)
+#! CROP DATA CLEANING PIPELINE (PYSPARK)
 # We sample 5% of the 500k rows to visualize the "messy" state of the data
 sample_pre_pd = crops_df.sample(False, 0.001).toPandas()
 
-plt.figure(figsize=(10, 4))
+plt.figure(figsize=(10, 6))
 sns.heatmap(sample_pre_pd.isnull(), cbar=False, cmap='viridis')
 plt.title("EDA: Missing Values Before Cleaning")
 plt.savefig("eda_pre_cleaning.png")
@@ -99,3 +99,7 @@ weather_yearly = weather_yearly.na.drop()
 print(f"\nCleaned & Aggregated weather data count: {weather_yearly.count()}")
 print("\n--- First 5 rows of CLEANED Weather Data ---")
 weather_yearly.show(5, truncate=False)
+
+weather_clean.coalesce(1).write.csv("cleaned-data/weather_cleaned_raw.csv", header=True, mode="overwrite")
+weather_yearly.coalesce(1).write.csv("cleaned-data/weather_cleaned.csv", header=True, mode="overwrite")
+crops_clean.coalesce(1).write.csv("cleaned-data/crops_cleaned.csv", header=True, mode="overwrite")
