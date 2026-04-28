@@ -1,5 +1,5 @@
 venv
 Notes.md
-raw-data/
+raw_data/
 test.*
-cleaned-data
+cleaned_data
