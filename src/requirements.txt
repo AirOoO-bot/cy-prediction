@@ -5,4 +5,3 @@ pyspark==3.5.1
 pyspark.egg==info
 pyspark_client.egg==info
 Requests==2.33.1
-Shapely
