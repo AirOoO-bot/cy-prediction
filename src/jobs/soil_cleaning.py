@@ -24,7 +24,7 @@ spark = (
     SparkSession.builder.appName("SoilCleaning")
     .config("spark.driver.memory", "2g")
     .config("spark.sql.shuffle.partitions", "8")
-    .master("local[3]")
+    .master("local[5]")
     .getOrCreate()
 )
 

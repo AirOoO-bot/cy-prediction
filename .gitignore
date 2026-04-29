@@ -1,5 +1,6 @@
-venv
+.venv
 Notes.md
 raw_data/
 test.*
 cleaned_data
+venv
